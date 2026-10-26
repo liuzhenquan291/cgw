@@ -1,4 +1,6 @@
 import os
+import signal
+import sys
 from typing import Any, Dict, List, Optional
 
 import httpx
@@ -198,6 +200,34 @@ async def messages(request: Request):
 @app.get("/health")
 async def health():
     return {"ok": True}
+
+
+@app.post("/admin/api/gateway/restart")
+async def admin_gateway_restart():
+    # Schedule restart in background so we can return response first
+    import threading, time
+
+    def _restart():
+        time.sleep(0.5)
+        # Kill all processes on our port
+        try:
+            import subprocess
+            out = subprocess.check_output(["lsof", "-ti", ":8787"], stderr=subprocess.DEVNULL)
+            for p in out.strip().split(b"\n"):
+                if p:
+                    try:
+                        os.kill(int(p), signal.SIGKILL)
+                    except (ProcessLookupError, PermissionError):
+                        pass
+        except Exception:
+            pass
+        time.sleep(0.5)
+        # Re-exec uvicorn
+        os.execv(sys.executable, [sys.executable, "-m", "uvicorn", "gateway:app",
+                                   "--host", "127.0.0.1", "--port", "8787"])
+
+    threading.Thread(target=_restart, daemon=True).start()
+    return {"ok": True, "message": "Gateway restarting..."}
 
 
 # ── Admin web page ──────────────────────────────────────

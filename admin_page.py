@@ -97,6 +97,7 @@ td code { background: #f1f5f9; padding: 2px 6px; border-radius: 4px; font-size: 
     <div class="pill"><span data-i18n="models_label">Models</span>: <strong id="mCount">0</strong></div>
     <div class="pill"><span data-i18n="upstream_label">Upstream</span>: <strong id="uUrl" style="font-size:11px">-</strong></div>
     <div class="pill"><code id="cPath" style="font-size:10px">~/.claude-gateway/profiles.json</code></div>
+    <div class="pill"><button class="btn btn-warning btn-sm" onclick="restartGateway()" data-i18n="btn_restart_gateway">Restart Gateway</button></div>
   </div>
 
   <div class="pending-banner" id="pendingBanner">
@@ -237,6 +238,7 @@ var I18N = {
     btn_delete: 'Delete', btn_edit: 'Edit', btn_switch: 'Switch',
     btn_apply_restart: 'Apply & Restart Desktop', btn_discard: 'Discard',
     btn_sync: 'Sync to Desktop', btn_confirm_restart: 'Confirm Restart',
+    btn_restart_gateway: 'Restart Gateway',
     btn_close: 'Close',
     add_profile: 'Add Profile', edit_profile: 'Edit Profile',
     add_model: 'Add Model Mapping', edit_model: 'Edit Model',
@@ -281,6 +283,7 @@ var I18N = {
     btn_delete: '删除', btn_edit: '编辑', btn_switch: '切换',
     btn_apply_restart: '生效并重启 Desktop', btn_discard: '丢弃',
     btn_sync: '同步到 Desktop', btn_confirm_restart: '确认重启',
+    btn_restart_gateway: '重启网关',
     btn_close: '关闭',
     add_profile: '添加平台', edit_profile: '编辑平台',
     add_model: '添加模型映射', edit_model: '编辑模型',
@@ -680,6 +683,21 @@ function discardPending() {
     if (res.ok) { showToast(t('msg_discarded'), 'success'); load(); }
     else showToast(res.data.detail || t('msg_failed'), 'error');
   }).catch(function(){ showToast(t('msg_network_error'), 'error'); });
+}
+
+function restartGateway() {
+  if (!confirm('Restart the gateway?')) return;
+  showToast('Restarting gateway...', 'warning');
+  fetch('/admin/api/gateway/restart', {method: 'POST'})
+  .then(function(r){return r.json();})
+  .then(function() {
+    showToast('Gateway restarting. Refresh in 2 seconds.', 'success');
+    setTimeout(function() { location.reload(); }, 2500);
+  }).catch(function() {
+    // Gateway may already be down during restart
+    showToast('Gateway restarting. Refresh in 2 seconds.', 'success');
+    setTimeout(function() { location.reload(); }, 2500);
+  });
 }
 
 applyLang();

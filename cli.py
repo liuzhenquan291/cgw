@@ -315,24 +315,53 @@ def cmd_start():
         print(color("  Error: Startup failed. Check logs: cgw logs", "red"))
 
 
+def kill_port(port):
+    """Kill all processes listening on the given port."""
+    try:
+        out = subprocess.check_output(
+            ["lsof", "-ti", ":{}".format(port)],
+            stderr=subprocess.DEVNULL,
+        )
+        pids = [int(p) for p in out.strip().split(b"\n") if p]
+        for pid in pids:
+            try:
+                os.kill(pid, signal.SIGKILL)
+            except (ProcessLookupError, PermissionError):
+                pass
+        return pids
+    except (subprocess.CalledProcessError, FileNotFoundError):
+        return []
+
+
 def cmd_stop():
     pid = get_pid()
-    if not pid:
-        print("  Gateway is not running")
-        return
-    try:
-        os.kill(pid, signal.SIGTERM)
-        import time
-        time.sleep(1)
-        print(color("  OK: Gateway stopped (PID: {})".format(pid), "green"))
-    except ProcessLookupError:
-        print("  Gateway is not running")
+    killed = []
+    if pid:
+        try:
+            os.kill(pid, signal.SIGTERM)
+            killed.append(pid)
+            import time
+            time.sleep(0.5)
+        except (ProcessLookupError, PermissionError):
+            pass
+
+    # Kill any remaining processes on the gateway port
+    port_killed = kill_port(8787)
+    killed.extend(port_killed)
+
     if os.path.exists(PID_FILE):
         os.remove(PID_FILE)
+
+    if killed:
+        print(color("  OK: Gateway stopped (killed PIDs: {})".format(killed), "green"))
+    else:
+        print("  Gateway is not running")
 
 
 def cmd_restart():
     cmd_stop()
+    import time
+    time.sleep(1)
     cmd_start()
 
 
