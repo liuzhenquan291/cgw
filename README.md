@@ -31,7 +31,7 @@ Third-party LLM API (MiMo, DeepSeek, Qwen, ...)
 ### Step 1: Install
 
 ```bash
-git clone <repo-url> && cd claude_desktop_gateway
+git clone https://github.com/liuzhenquan291/cgw.git && cd cgw
 ./install.sh
 ```
 
