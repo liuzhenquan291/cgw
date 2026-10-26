@@ -382,7 +382,10 @@ async def admin_switch_profile(request: Request):
 
 @app.get("/admin/api/desktop/status")
 async def admin_desktop_status():
-    return desktop.get_status()
+    try:
+        return desktop.get_status()
+    except Exception as e:
+        return JSONResponse(status_code=500, content={"detail": "Status check failed: {}".format(str(e))})
 
 
 @app.post("/admin/api/desktop/sync")
@@ -392,13 +395,16 @@ async def admin_desktop_sync():
     active = profiles.get_active_profile()
     if not active:
         return JSONResponse(status_code=400, content={"detail": "No active profile"})
-    models = [
-        {"id": m.get("id", ""), "display_name": m.get("display_name") or m.get("id", "")}
-        for m in active.get("models", [])
-        if isinstance(m, dict) and m.get("id")
-    ]
-    result = desktop.sync_from_gateway(models, "local-gateway")
-    return {"ok": True, "result": result}
+    try:
+        models = [
+            {"id": m.get("id", ""), "display_name": m.get("display_name") or m.get("id", "")}
+            for m in active.get("models", [])
+            if isinstance(m, dict) and m.get("id")
+        ]
+        result = desktop.sync_from_gateway(models, "local-gateway")
+        return {"ok": True, "result": result}
+    except Exception as e:
+        return JSONResponse(status_code=500, content={"detail": "Sync failed: {}".format(str(e))})
 
 
 @app.post("/admin/api/desktop/import")
@@ -415,10 +421,16 @@ async def admin_desktop_import():
 async def admin_desktop_apply():
     if not desktop.is_installed():
         return JSONResponse(status_code=400, content={"detail": "Claude Desktop not installed"})
-    return desktop.apply_and_restart()
+    try:
+        return desktop.apply_and_restart()
+    except Exception as e:
+        return JSONResponse(status_code=500, content={"detail": "Apply failed: {}".format(str(e))})
 
 
 @app.post("/admin/api/desktop/discard")
 async def admin_desktop_discard():
-    desktop.discard_pending()
-    return {"ok": True}
+    try:
+        desktop.discard_pending()
+        return {"ok": True}
+    except Exception as e:
+        return JSONResponse(status_code=500, content={"detail": "Discard failed: {}".format(str(e))})

@@ -95,13 +95,17 @@ class DesktopSync:
     def write_config(self, config_data, name="Default"):
         meta = self._read_meta()
         entries = meta.get("entries", [])
+        if not isinstance(entries, list):
+            entries = []
 
-        if entries:
-            target_id = entries[0]["id"]
-        else:
+        target_id = None
+        if entries and isinstance(entries[0], dict):
+            target_id = entries[0].get("id")
+
+        if not target_id:
             import uuid
             target_id = str(uuid.uuid4())
-            entries.append({"id": target_id, "name": name})
+            entries = [{"id": target_id, "name": name}]
 
         path = os.path.join(self._lib_dir, target_id + ".json")
         tmp = path + ".tmp"
