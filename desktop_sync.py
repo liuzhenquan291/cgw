@@ -93,6 +93,7 @@ class DesktopSync:
             return None
 
     def write_config(self, config_data, name="Default"):
+        os.makedirs(self._lib_dir, exist_ok=True)
         meta = self._read_meta()
         entries = meta.get("entries", [])
         if not isinstance(entries, list):
