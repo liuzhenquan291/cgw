@@ -12,6 +12,7 @@
 - **命令行工具（`cgw`）** — 在终端查看状态、切换环境、管理网关
 - **Claude Desktop 集成** — 一键同步和重启第三方推理配置
 - **热加载** — 模型变更即时生效，无需重启网关
+- **多语言** — Web 界面支持中英文切换
 
 ## 架构
 
@@ -27,6 +28,8 @@ Claude Desktop
 
 ## 快速开始
 
+### 第一步：安装
+
 ```bash
 git clone <repo-url> && cd claude_desktop_gateway
 ./install.sh
@@ -34,11 +37,42 @@ git clone <repo-url> && cd claude_desktop_gateway
 
 安装脚本会：
 1. 创建 Python 虚拟环境并安装依赖
-2. 引导配置第一个服务商（API Key、上游 URL）
-3. 将 `cgw` 命令安装到 PATH
+2. 引导配置第一个服务商环境（名称、上游 URL、API Key）— 可跳过，稍后配置
+3. 将 `cgw` 命令安装到 `~/.local/bin`
 4. 启动网关
 
-然后打开 **http://127.0.0.1:8787/admin** 在浏览器中管理所有配置。
+### 第二步：配置第一个环境
+
+在浏览器中打开 **http://127.0.0.1:8787/admin**。
+
+如果还没有环境配置，页面顶部会显示 **「快速配置」** 卡片：
+
+1. **环境名称** — 服务商的标签（如 `my-provider`）
+2. **上游 URL** — 服务商的 Anthropic 兼容 API 地址（如 `https://api.example.com/anthropic`）
+3. **API Key** — 你的服务商 API 密钥
+4. **认证方式** — 密钥发送方式（`api-key`、`x-api-key` 或 `Authorization`）
+
+点击 **「创建环境」** 保存。
+
+### 第三步：添加模型映射
+
+创建环境后，模型管理区域解锁：
+
+1. **Claude 模型 ID** — Claude Desktop 发送的模型名（必须包含 `claude`、`opus`、`sonnet`、`haiku` 等）
+2. **上游模型** — 服务商期望的真实模型名
+3. **显示名称** — 界面中显示的标签
+
+点击 **「添加映射」**。模型变更即时生效（无需重启网关）。
+
+### 第四步：同步到 Claude Desktop（可选）
+
+如果已安装 Claude Desktop：
+
+1. 点击 **「同步到 Desktop」** 推送模型配置
+2. 点击 **「生效并重启 Desktop」** 重启 Claude Desktop 使配置生效
+3. 在 Claude Desktop 的模型选择器中选择你的自定义模型
+
+> **注意：** 重启 Claude Desktop 会中断所有进行中的会话，请先保存工作。
 
 ## cgw 命令
 
@@ -127,9 +161,8 @@ Claude Desktop 会验证模型 ID，必须满足：
 ├── gateway.py           # FastAPI 代理服务器
 ├── profile_manager.py   # 多环境配置管理器
 ├── cli.py               # cgw 命令行工具
-├── admin_page.py        # Web 管理界面（单文件 HTML）
+├── admin_page.py        # Web 管理界面（单文件 HTML，支持中英文）
 ├── desktop_sync.py      # Claude Desktop 集成
-├── config_store.py      # 旧版配置存储（向后兼容）
 ├── install.sh           # 一键安装脚本
 ├── Makefile             # 构建/运行命令
 └── .gitignore           # 排除敏感文件和运行时文件
@@ -140,6 +173,13 @@ Claude Desktop 会验证模型 ID，必须满足：
 - Python 3.7+
 - macOS（Claude Desktop 集成需要）
 - 依赖：`fastapi`、`uvicorn`、`httpx`（自动安装）
+
+## 安全说明
+
+- 网关仅绑定 `127.0.0.1`，不可从网络访问
+- 无认证层 — 为单用户本地使用设计
+- API 密钥在 Web 界面中脱敏显示，文件权限 `0600`
+- **不建议在共享或多用户机器上使用** — 任何本地进程都可访问 admin API
 
 ## 许可证
 

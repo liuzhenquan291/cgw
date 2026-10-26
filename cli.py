@@ -40,11 +40,31 @@ def color(text, c):
     return codes.get(c, "") + text + codes["reset"]
 
 
+def safe_input(prompt):
+    try:
+        return input(prompt)
+    except (EOFError, KeyboardInterrupt):
+        print()
+        sys.exit(1)
+
+
 def get_pid():
     try:
         with open(PID_FILE) as f:
             pid = int(f.read().strip())
         os.kill(pid, 0)
+        # Verify it's actually a Python/uvicorn process, not a recycled PID
+        try:
+            import subprocess
+            out = subprocess.check_output(
+                ["ps", "-p", str(pid), "-o", "comm="],
+                stderr=subprocess.DEVNULL,
+            )
+            comm = out.decode().strip()
+            if "python" not in comm.lower() and "uvicorn" not in comm.lower():
+                return None
+        except (subprocess.CalledProcessError, FileNotFoundError):
+            pass
         return pid
     except (OSError, ValueError):
         return None
@@ -72,8 +92,11 @@ def write_env_key(key):
                 if not line.strip().startswith("MIMO_API_KEY="):
                     lines.append(line.rstrip("\n"))
     lines.append("MIMO_API_KEY={}".format(key))
-    with open(ENV_FILE, "w") as f:
+    tmp = ENV_FILE + ".tmp"
+    with open(tmp, "w") as f:
         f.write("\n".join(lines) + "\n")
+    os.chmod(tmp, 0o600)
+    os.replace(tmp, ENV_FILE)
 
 
 # ── commands ────────────────────────────────────────────
@@ -157,7 +180,7 @@ def cmd_switch(name):
         print(color("  OK: Switched to profile: " + name, "green"))
         print("    Upstream: {}".format(p.get("upstream_url", "-")))
         print()
-        print(color("  Warning: Please restart the gateway to apply changes:", "yellow"))
+        print(color("  Changes take effect on next request.", "yellow"))
         print("    " + color("cgw restart", "cyan"))
     except KeyError as e:
         print(color("  Error: " + str(e), "red"))
@@ -168,35 +191,35 @@ def cmd_add():
     print(color("  Create New Profile", "bold"))
     print()
 
-    name = input("  Profile name: ").strip()
+    name = safe_input("  Profile name: ").strip()
     if not name:
         print(color("  Error: Name cannot be empty", "red"))
         return
 
-    url = input("  Upstream URL: ").strip()
+    url = safe_input("  Upstream URL: ").strip()
     if not url:
         print(color("  Error: URL cannot be empty", "red"))
         return
 
-    key = input("  API Key: ").strip()
+    key = safe_input("  API Key: ").strip()
     if not key:
         print(color("  Error: API Key cannot be empty", "red"))
         return
 
-    auth = input("  Auth scheme (api-key/x-api-key/Authorization) [api-key]: ").strip() or "api-key"
+    auth = safe_input("  Auth scheme (api-key/x-api-key/Authorization) [api-key]: ").strip() or "api-key"
 
     print()
     print("  Add model mappings (enter empty line to finish):")
     models = []
     while True:
-        mid = input("    Claude Model ID: ").strip()
+        mid = safe_input("    Claude Model ID: ").strip()
         if not mid:
             break
-        upstream = input("    Upstream Model: ").strip()
+        upstream = safe_input("    Upstream Model: ").strip()
         if not upstream:
             print(color("    Error: Upstream cannot be empty", "red"))
             continue
-        display = input("    Display name [{}]: ".format(mid)).strip() or mid
+        display = safe_input("    Display name [{}]: ".format(mid)).strip() or mid
         models.append({"id": mid, "upstream": upstream, "display_name": display})
         print()
 
@@ -206,7 +229,7 @@ def cmd_add():
         write_env_key(key)
         print(color("  OK: Profile created: " + name, "green"))
         print()
-        print(color("  Warning: Please restart the gateway:", "yellow"))
+        print(color("  Changes take effect on next request.", "yellow"))
         print("    " + color("cgw restart", "cyan"))
     except (ValueError, KeyError) as e:
         print(color("  Error: " + str(e), "red"))
@@ -222,9 +245,9 @@ def cmd_edit(name):
     print(color("  Edit Profile: " + name, "bold"))
     print()
 
-    url = input("  Upstream URL [{}]: ".format(p.get("upstream_url", ""))).strip()
-    key = input("  API Key [{}]: ".format(p.get("api_key", "")[:8] + "...")).strip()
-    auth = input("  Auth scheme [{}]: ".format(p.get("auth_scheme", "api-key"))).strip()
+    url = safe_input("  Upstream URL [{}]: ".format(p.get("upstream_url", ""))).strip()
+    key = safe_input("  API Key [{}]: ".format(p.get("api_key", "")[:8] + "...")).strip()
+    auth = safe_input("  Auth scheme [{}]: ".format(p.get("auth_scheme", "api-key"))).strip()
 
     try:
         pm.update_profile(
@@ -237,14 +260,14 @@ def cmd_edit(name):
             write_env_key(key)
         print(color("  OK: Profile updated", "green"))
         print()
-        print(color("  Warning: Please restart the gateway:", "yellow"))
+        print(color("  Changes take effect on next request.", "yellow"))
         print("    " + color("cgw restart", "cyan"))
     except (ValueError, KeyError) as e:
         print(color("  Error: " + str(e), "red"))
 
 
 def cmd_remove(name):
-    confirm = input("  Delete profile '{}'? (y/N): ".format(name)).strip().lower()
+    confirm = safe_input("  Delete profile '{}'? (y/N): ".format(name)).strip().lower()
     if confirm != "y":
         print("  Cancelled")
         return

@@ -78,6 +78,12 @@ td code { background: #f1f5f9; padding: 3px 8px; border-radius: 4px; font-size: 
 .empty-state { text-align: center; padding: 48px 24px; color: #94a3b8; font-size: 14px; }
 .config-banner { background: #fff; border-radius: 8px; padding: 12px 16px; margin-bottom: 20px; font-size: 13px; color: #666; box-shadow: 0 1px 3px rgba(0,0,0,0.08); }
 .config-banner code { background: #f1f5f9; padding: 2px 8px; border-radius: 4px; font-size: 12px; }
+.setup-card { background: linear-gradient(135deg, #eef2ff 0%, #e0e7ff 100%); border: 2px solid #c7d2fe; border-radius: 12px; padding: 28px; margin-bottom: 24px; }
+.setup-card h2 { font-size: 18px; color: #3730a3; margin-bottom: 8px; }
+.setup-card .desc { font-size: 14px; color: #6366f1; margin-bottom: 20px; line-height: 1.6; }
+.no-profile-overlay { display: none; }
+.no-profile-overlay.visible { display: block; }
+.disabled-section { opacity: 0.4; pointer-events: none; }
 @media (max-width: 768px) {
   .form-grid, .desktop-info { grid-template-columns: 1fr; }
   .header { padding: 16px; flex-direction: column; gap: 12px; }
@@ -118,6 +124,29 @@ td code { background: #f1f5f9; padding: 3px 8px; border-radius: 4px; font-size: 
     </div>
   </div>
 
+  <!-- First-time Setup Card: shown when no profile exists -->
+  <div class="setup-card" id="setupCard" style="display:none">
+    <h2>&#128640; <span data-i18n="setup_title">Quick Setup</span></h2>
+    <div class="desc" data-i18n="setup_desc">Create your first provider profile to get started. Fill in the upstream API URL, API key, and give this profile a name.</div>
+    <div class="form-grid">
+      <div class="form-group"><label data-i18n="label_profile_name">Profile Name</label><input type="text" id="setupName" placeholder="e.g. my-provider"></div>
+      <div class="form-group"><label data-i18n="label_upstream_url">Upstream URL</label><input type="text" id="setupUrl" placeholder="https://api.your-provider.com/anthropic"></div>
+      <div class="form-group"><label>API Key</label><input type="password" id="setupKey" placeholder="sk-..."></div>
+      <div class="form-group"><label data-i18n="label_auth_scheme">Auth Scheme</label>
+        <select id="setupAuth">
+          <option value="api-key">api-key</option>
+          <option value="x-api-key">x-api-key</option>
+          <option value="Authorization">Authorization (Bearer)</option>
+        </select>
+      </div>
+    </div>
+    <div class="form-actions">
+      <button class="btn btn-primary" onclick="createFirstProfile()" data-i18n="btn_create_profile">Create Profile</button>
+    </div>
+  </div>
+
+  <!-- Model Management: disabled when no profile -->
+  <div id="modelSection">
   <div class="card">
     <h2 id="formTitle" data-i18n="add_model">Add Model Mapping</h2>
     <div class="form-grid">
@@ -139,6 +168,7 @@ td code { background: #f1f5f9; padding: 3px 8px; border-radius: 4px; font-size: 
     </table>
     <div class="empty-state" id="emptyState" style="display:none" data-i18n="no_models">No model mappings. Add one above.</div>
   </div>
+  </div><!-- end modelSection -->
 
   <div class="card">
     <h2><span data-i18n="desktop_integration">Claude Desktop Integration</span> <span class="badge badge-gray" id="desktopBadge" data-i18n="checking">Checking...</span></h2>
@@ -265,7 +295,7 @@ var I18N = {
     msg_profile_created: 'Profile created: ',
     msg_profile_deleted: 'Profile deleted',
     msg_switched: 'Switched to ',
-    msg_restart_gateway: '. Please restart the gateway.',
+    msg_restart_gateway: '. Changes take effect immediately.',
     msg_network_error: 'Network error',
     msg_updated: 'Updated',
     msg_added: 'Added',
@@ -282,7 +312,13 @@ var I18N = {
     msg_create_failed: 'Failed to create profile',
     msg_switch_failed: 'Failed to switch profile',
     msg_delete_failed: 'Failed to delete profile',
-    msg_sync_failed: 'Sync failed'
+    msg_sync_failed: 'Sync failed',
+    setup_title: 'Quick Setup',
+    setup_desc: 'Create your first provider profile to get started. Fill in the upstream API URL, API key, and give this profile a name.',
+    btn_create_profile: 'Create Profile',
+    no_active_profile: 'No active profile',
+    msg_profile_ready: 'Profile ready! You can now add model mappings below.',
+    msg_config_error: 'Config Error'
   },
   zh: {
     subtitle: '多环境模型网关',
@@ -347,7 +383,7 @@ var I18N = {
     msg_profile_created: '环境已创建：',
     msg_profile_deleted: '环境已删除',
     msg_switched: '已切换到 ',
-    msg_restart_gateway: '，请重启网关。',
+    msg_restart_gateway: '，变更即时生效。',
     msg_network_error: '网络错误',
     msg_updated: '已更新',
     msg_added: '已添加',
@@ -364,7 +400,13 @@ var I18N = {
     msg_create_failed: '创建环境失败',
     msg_switch_failed: '切换环境失败',
     msg_delete_failed: '删除环境失败',
-    msg_sync_failed: '同步失败'
+    msg_sync_failed: '同步失败',
+    setup_title: '快速配置',
+    setup_desc: '创建您的第一个服务商环境以开始使用。填写上游 API 地址、API 密钥，并为环境取个名字。',
+    btn_create_profile: '创建环境',
+    no_active_profile: '未激活环境',
+    msg_profile_ready: '环境已就绪！现在可以在下方添加模型映射。',
+    msg_config_error: '配置错误'
   }
 };
 
@@ -463,14 +505,33 @@ function renderProfiles(data) {
 }
 
 function updateStatus(data) {
-  document.getElementById('statusDot').className = 'status-dot';
-  document.getElementById('statusText').textContent = t('msg_running');
+  document.getElementById('statusDot').className = data.ok ? 'status-dot' : 'status-dot error';
+  document.getElementById('statusText').textContent = data.ok ? t('msg_running') : t('msg_config_error');
   document.getElementById('modelCount').textContent = data.model_count || 0;
   document.getElementById('configPath').textContent = data.config_path || '-';
-  if (data.upstream_base_url) document.getElementById('upstreamUrl').textContent = data.upstream_base_url;
+  if (data.upstream_base_url) {
+    document.getElementById('upstreamUrl').textContent = data.upstream_base_url;
+  } else {
+    document.getElementById('upstreamUrl').textContent = '-';
+  }
+  // Show/hide config error banner
+  var banner = document.getElementById('errorBanner');
+  if (data.config_error) {
+    banner.style.display = 'block';
+    document.getElementById('errorText').textContent = t('msg_config_error') + ': ' + data.config_error;
+  } else {
+    banner.style.display = 'none';
+  }
   if (data.active_profile) {
     document.getElementById('activeEnvName').textContent = data.active_profile;
     document.getElementById('modelProfileBadge').textContent = data.active_profile;
+    document.getElementById('envBadge').style.background = 'rgba(255,255,255,0.15)';
+    document.getElementById('envBadge').style.color = '#fff';
+  } else {
+    document.getElementById('activeEnvName').textContent = t('no_active_profile');
+    document.getElementById('modelProfileBadge').textContent = '-';
+    document.getElementById('envBadge').style.background = 'rgba(239,68,68,0.3)';
+    document.getElementById('envBadge').style.color = '#fca5a5';
   }
 }
 
@@ -504,16 +565,47 @@ function updateDesktopStatus(data) {
 }
 
 function load() {
-  fetch('/admin/api/status').then(function(r){return r.json();}).then(updateStatus);
+  fetch('/admin/api/status').then(function(r){return r.json();}).then(function(d) {
+    updateStatus(d);
+    var hasProfile = !!d.active_profile;
+    document.getElementById('setupCard').style.display = hasProfile ? 'none' : 'block';
+    var ms = document.getElementById('modelSection');
+    if (hasProfile) { ms.classList.remove('disabled-section'); }
+    else { ms.classList.add('disabled-section'); }
+  }).catch(function(){});
   fetch('/admin/api/models').then(function(r){return r.json();}).then(function(d) {
     renderTable(d.models || []);
     if (d.profile) document.getElementById('modelProfileBadge').textContent = d.profile;
-  });
+  }).catch(function(){});
   fetch('/admin/api/profiles').then(function(r){return r.json();}).then(function(d) {
-    if (d.active) document.getElementById('activeEnvName').textContent = d.active;
+    if (d.active) {
+      document.getElementById('activeEnvName').textContent = d.active;
+    } else {
+      document.getElementById('activeEnvName').textContent = t('no_active_profile');
+    }
     renderProfiles(d);
-  });
+  }).catch(function(){});
   fetch('/admin/api/desktop/status').then(function(r){return r.json();}).then(updateDesktopStatus).catch(function(){});
+}
+
+function createFirstProfile() {
+  var name = document.getElementById('setupName').value.trim();
+  var url = document.getElementById('setupUrl').value.trim();
+  var key = document.getElementById('setupKey').value.trim();
+  var auth = document.getElementById('setupAuth').value;
+  if (!name || !url || !key) { showToast(t('msg_fill_required'), 'error'); return; }
+  fetch('/admin/api/profiles', {
+    method: 'POST', headers: {'Content-Type': 'application/json'},
+    body: JSON.stringify({name: name, upstream_url: url, api_key: key, auth_scheme: auth})
+  }).then(function(r){return r.json().then(function(d){return {ok:r.ok,data:d};});})
+  .then(function(res) {
+    if (res.ok) {
+      showToast(t('msg_profile_created') + name, 'success');
+      load();
+    } else {
+      showToast(res.data.detail || t('msg_create_failed'), 'error');
+    }
+  }).catch(function(){ showToast(t('msg_network_error'), 'error'); });
 }
 
 function showProfilesModal() { load(); showModal('profilesModal'); }
@@ -608,7 +700,7 @@ function startEdit(id) {
         return;
       }
     }
-  });
+  }).catch(function(){ showToast(t('msg_network_error'), 'error'); });
 }
 
 function cancelEdit() {
@@ -625,7 +717,11 @@ function cancelEdit() {
 function deleteModel(id) {
   if (!confirm(t('confirm_delete_model'))) return;
   fetch('/admin/api/models/' + encodeURIComponent(id), {method: 'DELETE'})
-  .then(function(r){return r.json();}).then(function(){ showToast(t('msg_deleted'), 'success'); load(); });
+  .then(function(r){return r.json().then(function(d){return {ok:r.ok,data:d};});})
+  .then(function(res) {
+    if (res.ok) { showToast(t('msg_deleted'), 'success'); load(); }
+    else showToast(res.data.detail || t('msg_failed'), 'error');
+  }).catch(function(){ showToast(t('msg_network_error'), 'error'); });
 }
 
 function syncToDesktop() {
@@ -634,7 +730,7 @@ function syncToDesktop() {
   .then(function(res) {
     if (res.ok) { showToast(t('msg_synced'), 'success'); load(); }
     else showToast(res.data.detail || t('msg_sync_failed'), 'error');
-  });
+  }).catch(function(){ showToast(t('msg_network_error'), 'error'); });
 }
 
 function showApplyModal() { showModal('applyModal'); }
@@ -642,16 +738,21 @@ function confirmApply() {
   hideModal('applyModal');
   showToast(t('msg_restarting'), 'warning');
   fetch('/admin/api/desktop/apply', {method: 'POST'})
-  .then(function(r){return r.json();}).then(function(d) {
-    if (d.ok) { showToast(t('msg_restarted'), 'success'); setTimeout(load, 3000); }
-    else showToast(d.error || t('msg_restart_failed'), 'error');
-  });
+  .then(function(r){return r.json().then(function(d){return {ok:r.ok,data:d};});})
+  .then(function(res) {
+    if (res.ok && res.data.ok) { showToast(t('msg_restarted'), 'success'); setTimeout(load, 3000); }
+    else showToast((res.data && (res.data.detail || res.data.error)) || t('msg_restart_failed'), 'error');
+  }).catch(function(){ showToast(t('msg_network_error'), 'error'); });
 }
 
 function discardPending() {
   if (!confirm(t('confirm_discard'))) return;
   fetch('/admin/api/desktop/discard', {method: 'POST'})
-  .then(function(){ showToast(t('msg_config_discarded'), 'success'); load(); });
+  .then(function(r){return r.json().then(function(d){return {ok:r.ok,data:d};});})
+  .then(function(res) {
+    if (res.ok) { showToast(t('msg_config_discarded'), 'success'); load(); }
+    else showToast(res.data.detail || t('msg_failed'), 'error');
+  }).catch(function(){ showToast(t('msg_network_error'), 'error'); });
 }
 
 applyLang();

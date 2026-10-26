@@ -20,7 +20,12 @@ class ProfileManager:
         self._path = path or PROFILES_PATH
         self._lock = threading.Lock()
         self._data = {"version": 2, "active": "", "profiles": {}}
+        self._config_error = None  # type: Optional[str]
         self._load_or_create()
+
+    @property
+    def path(self):
+        return self._path
 
     def _load_or_create(self):
         if not os.path.exists(self._path):
@@ -32,13 +37,32 @@ class ProfileManager:
         try:
             with open(self._path, "r", encoding="utf-8") as f:
                 data = json.load(f)
+            active = data.get("active") or ""
+            if not isinstance(active, str):
+                active = str(active)
+            profiles = data.get("profiles") or {}
+            if not isinstance(profiles, dict):
+                profiles = {}
+            # Sanitize profiles: ensure values are dicts with valid models lists
+            cleaned = {}
+            for pname, p in profiles.items():
+                if not isinstance(p, dict):
+                    continue
+                if not isinstance(p.get("models"), list):
+                    p["models"] = []
+                p["models"] = [m for m in p["models"] if isinstance(m, dict)]
+                cleaned[pname] = p
+            profiles = cleaned
             self._data = {
                 "version": 2,
-                "active": str(data.get("active", "")),
-                "profiles": data.get("profiles", {}),
+                "active": active,
+                "profiles": profiles,
             }
-        except (OSError, ValueError):
-            pass
+            self._config_error = None
+        except (OSError, ValueError) as e:
+            self._config_error = str(e)
+            # Do NOT overwrite the file on load failure — keep in-memory defaults
+            # so the gateway still works, but surface the error
 
     def _save_locked(self):
         os.makedirs(os.path.dirname(self._path), exist_ok=True)
@@ -46,6 +70,7 @@ class ProfileManager:
         with open(tmp, "w", encoding="utf-8") as f:
             json.dump(self._data, f, indent=2, ensure_ascii=False)
             f.write("\n")
+        os.chmod(tmp, 0o600)
         os.replace(tmp, self._path)
 
     def _validate_profile(self, name, upstream_url, api_key, models):
@@ -60,6 +85,8 @@ class ProfileManager:
             raise ValueError("API key cannot be empty")
         validated = []
         for m in (models or []):
+            if not isinstance(m, dict):
+                continue
             mid = str(m.get("id", "")).strip()
             upstream = str(m.get("upstream", "")).strip()
             if not mid or not upstream:
@@ -74,9 +101,12 @@ class ProfileManager:
     def list_profiles(self):
         with self._lock:
             self._load_from_disk()
+            # Deep copy to prevent callers from mutating internal state
+            import copy
             return {
                 "active": self._data["active"],
-                "profiles": dict(self._data["profiles"]),
+                "profiles": copy.deepcopy(self._data["profiles"]),
+                "config_error": self._config_error,
             }
 
     def get_profile(self, name):
@@ -124,8 +154,8 @@ class ProfileManager:
 
     def get_upstream_model(self, model_id):
         for m in self.get_active_models():
-            if m["id"] == model_id:
-                return m["upstream"]
+            if isinstance(m, dict) and m.get("id") == model_id:
+                return m.get("upstream")
         return None
 
     def add_profile(self, name, upstream_url, api_key, models=None, auth_scheme=DEFAULT_AUTH_SCHEME):
@@ -193,13 +223,19 @@ class ProfileManager:
             return dict(self._data["profiles"][name])
 
     def add_model_to_profile(self, profile_name, model_id, upstream, display_name=""):
+        model_id = (model_id or "").strip()
+        upstream = (upstream or "").strip()
+        if not model_id:
+            raise ValueError("Model ID cannot be empty")
+        if not upstream:
+            raise ValueError("Upstream model cannot be empty")
         with self._lock:
             self._load_from_disk()
             if profile_name not in self._data["profiles"]:
                 raise KeyError("Profile not found: {}".format(profile_name))
             p = self._data["profiles"][profile_name]
             for m in p["models"]:
-                if m["id"] == model_id:
+                if isinstance(m, dict) and m.get("id") == model_id:
                     raise KeyError("Model already exists: {}".format(model_id))
             p["models"].append({
                 "id": model_id,
@@ -215,7 +251,7 @@ class ProfileManager:
                 raise KeyError("Profile not found: {}".format(profile_name))
             p = self._data["profiles"][profile_name]
             for m in p["models"]:
-                if m["id"] == model_id:
+                if isinstance(m, dict) and m.get("id") == model_id:
                     if upstream is not None:
                         u = upstream.strip()
                         if not u:
@@ -234,7 +270,7 @@ class ProfileManager:
                 raise KeyError("Profile not found: {}".format(profile_name))
             p = self._data["profiles"][profile_name]
             before = len(p["models"])
-            p["models"] = [m for m in p["models"] if m["id"] != model_id]
+            p["models"] = [m for m in p["models"] if isinstance(m, dict) and m.get("id") != model_id]
             if len(p["models"]) == before:
                 raise KeyError("Model not found: {}".format(model_id))
             self._save_locked()

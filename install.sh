@@ -15,6 +15,12 @@ for p in python3.12 python3.11 python3.10 python3.9 python3.8 python3; do
     if command -v "$p" &>/dev/null; then PYTHON="$p"; break; fi
 done
 if [ -z "$PYTHON" ]; then echo "Error: Python 3.7+ not found"; exit 1; fi
+
+# Verify Python version >= 3.7
+if ! "$PYTHON" -c 'import sys; sys.exit(0 if sys.version_info >= (3,7) else 1)' 2>/dev/null; then
+    echo "Error: Python 3.7+ required, found $("$PYTHON" --version 2>&1)"
+    exit 1
+fi
 echo "Python: $PYTHON ($("$PYTHON" --version 2>&1))"
 
 # ── 2. Create virtual environment ─────────────────
@@ -37,33 +43,39 @@ if [ ! -f "$PROFILES_FILE" ]; then
     echo ""
     echo "Create your first profile (press Enter to skip, configure later via Web UI):"
     printf "Profile name [default]: "
-    read -r P_NAME
+    read -r P_NAME || true
     P_NAME="${P_NAME:-default}"
     printf "Upstream URL [https://api.your-provider.com/anthropic]: "
-    read -r P_URL
+    read -r P_URL || true
     P_URL="${P_URL:-https://api.your-provider.com/anthropic}"
     printf "API Key: "
-    read -r P_KEY
+    read -r -s P_KEY || true
+    echo
 
     if [ -n "$P_KEY" ]; then
-        cat > "$PROFILES_FILE" << EOF
-{
-  "version": 2,
-  "active": "$P_NAME",
-  "profiles": {
-    "$P_NAME": {
-      "upstream_url": "$P_URL",
-      "api_key": "$P_KEY",
-      "auth_scheme": "api-key",
-      "models": [
-        {"id": "claude-opus-4-6", "upstream": "your-model-pro", "display_name": "Your Model Pro"},
-        {"id": "claude-sonnet-4-5", "upstream": "your-model-flash", "display_name": "Your Model Flash"}
-      ]
+        "$PYTHON" -c "
+import json, sys
+data = {
+    'version': 2,
+    'active': sys.argv[1],
+    'profiles': {
+        sys.argv[1]: {
+            'upstream_url': sys.argv[2],
+            'api_key': sys.argv[3],
+            'auth_scheme': 'api-key',
+            'models': [
+                {'id': 'claude-opus-4-6', 'upstream': 'your-model-pro', 'display_name': 'Your Model Pro'},
+                {'id': 'claude-sonnet-4-5', 'upstream': 'your-model-flash', 'display_name': 'Your Model Flash'}
+            ]
+        }
     }
-  }
 }
-EOF
-        echo "MIMO_API_KEY=$P_KEY" > .env
+with open(sys.argv[4], 'w') as f:
+    json.dump(data, f, indent=2, ensure_ascii=False)
+    f.write('\n')
+" "$P_NAME" "$P_URL" "$P_KEY" "$PROFILES_FILE"
+        printf 'MIMO_API_KEY=%s\n' "$P_KEY" > .env
+        chmod 600 .env
         echo "OK: Profile '$P_NAME' created successfully"
     else
         echo '{}' > "$PROFILES_FILE"
@@ -102,8 +114,11 @@ if [ -f "$PID_FILE" ] && kill -0 "$(cat "$PID_FILE")" 2>/dev/null; then
     echo ""
     echo "Gateway already running (PID: $(cat "$PID_FILE"))"
 else
-    source .env 2>/dev/null || true
-    nohup python -m uvicorn gateway:app --host 127.0.0.1 --port 8787 > gateway.log 2>&1 &
+    # Read API key safely from .env (without sourcing)
+    if [ -f .env ]; then
+        export MIMO_API_KEY="$(grep '^MIMO_API_KEY=' .env | cut -d= -f2-)"
+    fi
+    nohup "$DIR/.venv/bin/python" -m uvicorn gateway:app --host 127.0.0.1 --port 8787 > gateway.log 2>&1 &
     echo $! > "$PID_FILE"
     sleep 2
     if kill -0 "$(cat "$PID_FILE")" 2>/dev/null; then

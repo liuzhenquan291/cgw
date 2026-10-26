@@ -12,6 +12,7 @@ A multi-profile model gateway that lets Claude Desktop use third-party LLM provi
 - **CLI tool (`cgw`)** — check status, switch profiles, manage the gateway from the terminal
 - **Claude Desktop integration** — one-click sync and restart for third-party inference
 - **Hot reload** — model changes take effect without restarting the gateway
+- **i18n** — English/Chinese language toggle in the web UI
 
 ## Architecture
 
@@ -27,6 +28,8 @@ Third-party LLM API (MiMo, DeepSeek, Qwen, ...)
 
 ## Quick Start
 
+### Step 1: Install
+
 ```bash
 git clone <repo-url> && cd claude_desktop_gateway
 ./install.sh
@@ -34,11 +37,42 @@ git clone <repo-url> && cd claude_desktop_gateway
 
 The installer will:
 1. Create a Python virtual environment and install dependencies
-2. Prompt for your first provider configuration (API key, upstream URL)
-3. Install the `cgw` command to your PATH
+2. Prompt for your first provider profile (name, upstream URL, API key) — or skip and configure later
+3. Install the `cgw` command to `~/.local/bin`
 4. Start the gateway
 
-Then open **http://127.0.0.1:8787/admin** to manage everything from the browser.
+### Step 2: Configure your first profile
+
+Open **http://127.0.0.1:8787/admin** in your browser.
+
+If no profile exists yet, you'll see a **Quick Setup** card:
+
+1. **Profile Name** — a label for this provider (e.g. `my-provider`)
+2. **Upstream URL** — the provider's Anthropic-compatible API endpoint (e.g. `https://api.example.com/anthropic`)
+3. **API Key** — your provider API key
+4. **Auth Scheme** — how the key is sent (`api-key`, `x-api-key`, or `Authorization`)
+
+Click **Create Profile** to save.
+
+### Step 3: Add model mappings
+
+After creating a profile, the model management section unlocks:
+
+1. **Claude Model ID** — the model name Claude Desktop will send (must contain `claude`, `opus`, `sonnet`, `haiku`, etc.)
+2. **Upstream Model** — the real model name your provider expects
+3. **Display Name** — label shown in the UI
+
+Click **Add Mapping**. Model changes take effect immediately (no gateway restart needed).
+
+### Step 4: Sync to Claude Desktop (optional)
+
+If Claude Desktop is installed:
+
+1. Click **Sync to Desktop** to push your model config
+2. Click **Apply & Restart Desktop** to restart Claude Desktop with the new config
+3. In Claude Desktop, select your custom models from the model picker
+
+> **Note:** Restarting Claude Desktop interrupts all active sessions. Save your work first.
 
 ## CLI Commands
 
@@ -127,9 +161,8 @@ Access at `http://127.0.0.1:8787/admin`:
 ├── gateway.py           # FastAPI proxy server
 ├── profile_manager.py   # Multi-profile configuration manager
 ├── cli.py               # cgw command-line tool
-├── admin_page.py        # Web admin UI (single-file HTML)
+├── admin_page.py        # Web admin UI (single-file HTML with i18n)
 ├── desktop_sync.py      # Claude Desktop integration
-├── config_store.py      # Legacy config store (backward compatible)
 ├── install.sh           # One-click installer
 ├── Makefile             # Build/run commands
 └── .gitignore           # Excludes secrets and runtime files
@@ -140,6 +173,13 @@ Access at `http://127.0.0.1:8787/admin`:
 - Python 3.7+
 - macOS (for Claude Desktop integration)
 - Dependencies: `fastapi`, `uvicorn`, `httpx` (installed automatically)
+
+## Security
+
+- The gateway binds to `127.0.0.1` only — not accessible from the network
+- No authentication layer — designed for single-user local use
+- API keys are masked in the web UI and stored with `0600` file permissions
+- **Not recommended for shared or multi-user machines** — any local process can access the admin API
 
 ## License
 

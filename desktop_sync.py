@@ -43,19 +43,13 @@ class DesktopSync:
         return os.path.isdir(DESKTOP_APP)
 
     def is_running(self):
-        try:
-            out = subprocess.check_output(
-                ["pgrep", "-f", "Claude.*--type"],
-                stderr=subprocess.DEVNULL,
-            )
-            return len(out.strip()) > 0
-        except (subprocess.CalledProcessError, FileNotFoundError):
-            return False
+        return len(self.get_running_pids()) > 0
 
     def get_running_pids(self):
+        # Match only Claude Desktop app, NOT Claude Code CLI or other tools
         try:
             out = subprocess.check_output(
-                ["pgrep", "-f", "Claude"],
+                ["pgrep", "-f", "Claude.app/Contents/MacOS/Claude"],
                 stderr=subprocess.DEVNULL,
             )
             return [int(p) for p in out.strip().split(b"\n") if p]
@@ -67,8 +61,11 @@ class DesktopSync:
     def _read_meta(self):
         if not os.path.exists(self._meta_path):
             return {"appliedId": None, "entries": []}
-        with open(self._meta_path, "r", encoding="utf-8") as f:
-            return json.load(f)
+        try:
+            with open(self._meta_path, "r", encoding="utf-8") as f:
+                return json.load(f)
+        except (ValueError, OSError):
+            return {"appliedId": None, "entries": []}
 
     def _write_meta(self, meta):
         os.makedirs(self._lib_dir, exist_ok=True)
@@ -89,8 +86,11 @@ class DesktopSync:
         path = os.path.join(self._lib_dir, applied_id + ".json")
         if not os.path.exists(path):
             return None
-        with open(path, "r", encoding="utf-8") as f:
-            return json.load(f)
+        try:
+            with open(path, "r", encoding="utf-8") as f:
+                return json.load(f)
+        except (ValueError, OSError):
+            return None
 
     def write_config(self, config_data, name="Default"):
         meta = self._read_meta()
@@ -185,16 +185,22 @@ class DesktopSync:
     # ── apply & restart ─────────────────────────
 
     def apply_and_restart(self):
-        self._clear_pending()
-        return self.restart_desktop()
+        result = self.restart_desktop()
+        if result.get("ok"):
+            self._clear_pending()
+        return result
 
     def discard_pending(self):
+        """Remove all synced configs and clear pending state."""
         meta = self._read_meta()
         applied_id = meta.get("appliedId")
         if applied_id:
             path = os.path.join(self._lib_dir, applied_id + ".json")
             if os.path.exists(path):
-                os.remove(path)
+                try:
+                    os.remove(path)
+                except OSError:
+                    pass
         meta["entries"] = []
         meta["appliedId"] = None
         self._write_meta(meta)
@@ -212,8 +218,21 @@ class DesktopSync:
             except (ProcessLookupError, PermissionError):
                 pass
 
+        # Wait for processes to actually exit (max 5 seconds)
         if pids:
-            time.sleep(2)
+            for _ in range(10):
+                remaining = [p for p in pids if self._pid_alive(p)]
+                if not remaining:
+                    break
+                time.sleep(0.5)
+            # Force kill any stragglers
+            for p in pids:
+                if self._pid_alive(p):
+                    try:
+                        os.kill(p, signal.SIGKILL)
+                    except (ProcessLookupError, PermissionError):
+                        pass
+            time.sleep(0.5)
 
         try:
             subprocess.Popen(
@@ -224,6 +243,14 @@ class DesktopSync:
             return {"ok": True, "restarted": True, "killed_pids": pids}
         except FileNotFoundError:
             return {"ok": False, "error": "Cannot launch Claude Desktop"}
+
+    @staticmethod
+    def _pid_alive(pid):
+        try:
+            os.kill(pid, 0)
+            return True
+        except (ProcessLookupError, PermissionError):
+            return False
 
     # ── status ──────────────────────────────────
 
